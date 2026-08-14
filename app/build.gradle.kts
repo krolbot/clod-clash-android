@@ -1,6 +1,7 @@
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import groovy.json.JsonOutput
 
 plugins {
     kotlin("android")
@@ -12,6 +13,13 @@ plugins {
 android {
     buildFeatures {
         compose = true
+    }
+
+    defaultConfig {
+        val sentryDsn = System.getenv("SENTRY_DSN").orEmpty()
+        val sentryRelease = System.getenv("SENTRY_RELEASE").orEmpty()
+        buildConfigField("String", "SENTRY_DSN", JsonOutput.toJson(sentryDsn))
+        buildConfigField("String", "SENTRY_RELEASE", JsonOutput.toJson(sentryRelease))
     }
 }
 
@@ -43,6 +51,8 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.sentry.android)
+
 }
 
 tasks.getByName("clean", type = Delete::class) {

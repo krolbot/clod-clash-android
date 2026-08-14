@@ -14,6 +14,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.net.InetSocketAddress
 
+@kotlinx.serialization.Serializable
+data class DiagnosticsStatus(
+    val available: Boolean,
+    val running: Boolean,
+)
+
 object Clash {
     enum class OverrideSlot {
         Persist, Session
@@ -39,6 +45,18 @@ object Clash {
 
     fun reset() {
         Bridge.nativeReset()
+    }
+
+    fun startDiagnostics(endpoint: String, auth: String) {
+        Bridge.nativeStartDiagnostics(endpoint, auth)
+    }
+
+    fun stopDiagnostics() {
+        Bridge.nativeStopDiagnostics()
+    }
+
+    fun queryDiagnostics(): DiagnosticsStatus {
+        return CoreJson.decodeFromString(DiagnosticsStatus.serializer(), Bridge.nativeQueryDiagnostics())
     }
 
     fun forceGc() {

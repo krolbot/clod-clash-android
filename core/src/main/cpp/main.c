@@ -32,6 +32,37 @@ Java_com_github_kr328_clash_core_bridge_Bridge_nativeReset(JNIEnv *env, jobject 
 }
 
 JNIEXPORT void JNICALL
+Java_com_github_kr328_clash_core_bridge_Bridge_nativeStartDiagnostics(JNIEnv *env, jobject thiz,
+                                                                      jstring endpoint, jstring auth) {
+    TRACE_METHOD();
+
+    if (endpoint == NULL || auth == NULL) {
+        stopDiagnostics();
+        return;
+    }
+
+    scoped_string _endpoint = get_string(endpoint);
+    scoped_string _auth = get_string(auth);
+    startDiagnostics(_endpoint, _auth);
+}
+
+JNIEXPORT void JNICALL
+Java_com_github_kr328_clash_core_bridge_Bridge_nativeStopDiagnostics(JNIEnv *env, jobject thiz) {
+    TRACE_METHOD();
+
+    stopDiagnostics();
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_github_kr328_clash_core_bridge_Bridge_nativeQueryDiagnostics(JNIEnv *env, jobject thiz) {
+    TRACE_METHOD();
+
+    scoped_string response = queryDiagnostics();
+
+    return new_string(response);
+}
+
+JNIEXPORT void JNICALL
 Java_com_github_kr328_clash_core_bridge_Bridge_nativeForceGc(JNIEnv *env, jobject thiz) {
     TRACE_METHOD();
 

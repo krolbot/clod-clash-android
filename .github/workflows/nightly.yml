@@ -53,6 +53,11 @@ jobs:
           cd $(go env GOROOT)
           for p in $GITHUB_WORKSPACE/.github/patch/*.patch; do patch --verbose -p 1 < "$p"; done
 
+      - name: Настроить fingerprint live-диагностики
+        env:
+          DIAGNOSTICS_FINGERPRINT: ${{ secrets.DIAGNOSTICS_FINGERPRINT }}
+        run: python3 .github/scripts/configure-diagnostics.py
+
       - uses: actions/cache@v5
         with:
           path: |
@@ -102,6 +107,10 @@ jobs:
           } > signing.properties
 
       - name: Сборка
+        env:
+          DIAGNOSTICS_ENDPOINT: ${{ vars.DIAGNOSTICS_ENDPOINT }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_RELEASE: io.clodclash.app@${{ steps.v.outputs.version }}+${{ github.sha }}
         run: ./gradlew --no-daemon app:assembleStandardRelease
 
       - name: Проверка выравнивания 16 KB

@@ -29,6 +29,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
+          cache: false
           go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
           go-version: '1.26'
 
@@ -36,6 +37,11 @@ jobs:
         run: |
           cd $(go env GOROOT)
           for p in $GITHUB_WORKSPACE/.github/patch/*.patch; do patch --verbose -p 1 < "$p"; done
+
+      - name: Configure live diagnostics fingerprint
+        env:
+          DIAGNOSTICS_FINGERPRINT: ${{ secrets.DIAGNOSTICS_FINGERPRINT }}
+        run: python3 .github/scripts/configure-diagnostics.py
 
       - uses: actions/cache@v5
         with:
@@ -62,19 +68,16 @@ jobs:
       #     echo keystore.password="$SIGNING_STORE_PASSWORD" > signing.properties
       #     echo key.alias="$SIGNING_KEY_ALIAS" >> signing.properties
       #     echo key.password="$SIGNING_KEY_PASSWORD" >> signing.properties
-      # Разбор заголовков панели живёт в Go, и проверяется он тоже на Go —
-      # самым первым шагом: пакет `native/config/panel` не зависит ни от ядра,
-      # ни от Android, собирается из одной стандартной библиотеки за секунду,
-      # и ждать ради него Gradle с NDK незачем.
-      #
-      # Именно этот пакет, а не `native/config` целиком: соседи по каталогу
-      # тянут `native/app`, а тот зовёт mihomo-функции из файла с тегами
-      # `android && cmfa` — на хост-платформе их нет, и сборка падает.
+      # Diagnostics тестируется явным списком pure Go-файлов, а panel — своим
+      # host-safe пакетом. Целиком `cfa/native` на Linux не собрать: соседний
+      # `native/app` вызывает Mihomo symbols из файлов с тегами `android && cmfa`.
       - name: Go unit tests
         id: go-tests
         if: success()
-        working-directory: core/src/main/golang
-        run: go test ./native/config/panel/...
+        working-directory: core/src/foss/golang
+        run: |
+          go test ../../main/golang/native/diagnostics.go ../../main/golang/native/diagnostics_test.go
+          go test cfa/native/config/panel/...
 
       # Unit-тесты на чистые считалки — ДО сборки приложения: они дешевле
       # (:core им нужен, а вот сборка APK, R8 и упаковка — нет), и красная
@@ -111,6 +114,10 @@ jobs:
 
       - name: Build
         if: success()
+        env:
+          DIAGNOSTICS_ENDPOINT: ${{ vars.DIAGNOSTICS_ENDPOINT }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_RELEASE: io.clodclash.app@${{ github.sha }}
         run: ./gradlew --no-daemon app:assembleStandardDebug -Pclod.abi=arm64-v8a
 
       # Один артефакт вместо четырёх: сборка идёт по одной ABI (-Pclod.abi=arm64-v8a),
@@ -124,4 +131,4 @@ jobs:
           name: clodclash-debug-arm64-v8a
           if-no-files-found: error
           path: |
-            app/build/outputs/apk/standard/debug/*.apk
+            app/build/outputs/apk/standard/debug/*arm64-v8a*.apk

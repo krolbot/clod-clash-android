@@ -51,3 +51,9 @@ extern void log_warn(char *msg);
 extern void log_debug(char *msg);
 
 extern void log_verbose(char *msg);
+
+extern void startDiagnostics(c_string endpoint, c_string auth);
+
+extern void stopDiagnostics(void);
+
+extern char *queryDiagnostics(void);

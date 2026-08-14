@@ -33,6 +33,7 @@
         android:name=".MainApplication"
         android:allowBackup="true"
         android:banner="@mipmap/ic_banner"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/full_backup_content"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/application_name"
@@ -43,6 +44,9 @@
         android:theme="@style/BootstrapTheme"
         tools:ignore="GoogleAppIndexingWarning"
         tools:targetApi="N">
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
         <meta-data
             android:name="releaseName"
             android:value="@string/release_name" />

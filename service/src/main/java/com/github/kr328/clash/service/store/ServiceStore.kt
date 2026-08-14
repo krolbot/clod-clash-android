@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import com.github.kr328.clash.common.store.Store
 import com.github.kr328.clash.common.store.asStoreProvider
+import com.github.kr328.clash.service.BuildConfig
 import com.github.kr328.clash.service.PreferenceProvider
 import com.github.kr328.clash.service.model.AccessControlMode
 import java.util.*
@@ -149,6 +150,18 @@ class ServiceStore(context: Context) {
     var dynamicNotification by store.boolean(
         key = "dynamic_notification",
         defaultValue = true
+    )
+
+    // Пользовательский выбор сохраняется между сессиями VPN. Runtime-состояние
+    // канала и адреса здесь не хранятся; учётные данные лежат отдельно в Keystore.
+    var diagnosticsEnabled by store.boolean(
+        key = "diagnostics_enabled",
+        defaultValue = false,
+    )
+
+    var diagnosticsEndpoint by store.string(
+        key = "diagnostics_endpoint",
+        defaultValue = BuildConfig.DIAGNOSTICS_ENDPOINT,
     )
 
     /**

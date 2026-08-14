@@ -36,12 +36,28 @@ func coreInit(home, versionName, gitVersion C.c_string, sdkVersion C.int) {
 
 //export reset
 func reset() {
+	diagnosticsStop()
 	config.LoadDefault()
 	tunnel.ResetStatistic()
 	tunnel.CloseAllConnections()
 
 	runtime.GC()
 	debug.FreeOSMemory()
+}
+
+//export startDiagnostics
+func startDiagnostics(endpoint, auth C.c_string) {
+	diagnosticsStart(C.GoString(endpoint), C.GoString(auth))
+}
+
+//export stopDiagnostics
+func stopDiagnostics() {
+	diagnosticsStop()
+}
+
+//export queryDiagnostics
+func queryDiagnostics() *C.char {
+	return C.CString(diagnosticsQuery())
 }
 
 //export forceGc

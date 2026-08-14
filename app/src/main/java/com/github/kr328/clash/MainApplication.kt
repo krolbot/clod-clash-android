@@ -23,6 +23,8 @@ class MainApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        initializeSentry(this)
+
         val processName = currentProcessName
         extractGeoFiles()
 

@@ -39,7 +39,6 @@ class ClashService : BaseService() {
         install(AppListCacheModule(self))
         install(TimeZoneModule(self))
         install(SuspendModule(self))
-
         try {
             while (isActive) {
                 val quit = select<Boolean> {

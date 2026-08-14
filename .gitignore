@@ -65,8 +65,4 @@ google-services.json
 # MacOS
 .DS_Store
 
-# clod: подпись релиза — только из секретов CI, в репозиторий не кладём
-/signing.properties
-/release.keystore
-*.keystore
-*.jks
+core/src/main/golang/native/diagnostics_credentials_generated.go

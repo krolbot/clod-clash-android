@@ -6,6 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import com.github.kr328.clash.common.model.DiagnosticsState
+import com.github.kr328.clash.design.BuildConfig
 import com.github.kr328.clash.design.compose.screen.AppSettingsAction
 import com.github.kr328.clash.design.compose.screen.AppSettingsScreen
 import com.github.kr328.clash.design.compose.screen.AppSettingsState
@@ -13,7 +15,10 @@ import com.github.kr328.clash.design.compose.theme.ClodClashTheme
 import com.github.kr328.clash.design.model.Behavior
 import com.github.kr328.clash.design.model.DarkMode
 import com.github.kr328.clash.design.store.UiStore
+import com.github.kr328.clash.service.store.DiagnosticsCredentialStore
 import com.github.kr328.clash.service.store.ServiceStore
+import com.github.kr328.clash.service.store.normalizeDiagnosticsEndpoint
+import com.github.kr328.clash.service.util.sendDiagnosticsChanged
 
 class AppSettingsDesign(
     context: Context,
@@ -22,6 +27,7 @@ class AppSettingsDesign(
     private val behavior: Behavior,
     running: Boolean,
     private val onHideIconChange: (hide: Boolean) -> Unit,
+    diagnosticsState: DiagnosticsState,
 ) : Design<AppSettingsDesign.Request>(context) {
     sealed interface Request {
         /** Тема или режим в недавних сменились — открытые экраны надо пересобрать. */
@@ -30,6 +36,8 @@ class AppSettingsDesign(
     }
 
     private val darkModes = DarkMode.entries
+    private val credentials = DiagnosticsCredentialStore(context)
+    private val diagnosticsEndpoint = normalizeDiagnosticsEndpoint(srvStore.diagnosticsEndpoint).orEmpty()
 
     private var state by mutableStateOf(
         AppSettingsState(
@@ -43,6 +51,12 @@ class AppSettingsDesign(
             notificationEditable = !running,
             enableHwid = srvStore.enableHwid,
             subNotifications = srvStore.enableSubNotifications,
+            diagnosticsEnabled = srvStore.diagnosticsEnabled,
+            diagnosticsAvailable = BuildConfig.DIAGNOSTICS_AVAILABLE,
+            diagnosticsConfigured = credentials.read() != null,
+            diagnosticsEndpoint = diagnosticsEndpoint,
+            vpnServiceRunning = running && uiStore.enableVpn,
+            diagnosticsState = diagnosticsState,
         ),
     )
 
@@ -110,6 +124,57 @@ class AppSettingsDesign(
 
                 state = state.copy(dynamicNotification = action.enabled)
             }
+            is AppSettingsAction.SetDiagnostics -> {
+                if (
+                    action.enabled &&
+                    (
+                        !state.diagnosticsAvailable ||
+                            !state.diagnosticsConfigured ||
+                            state.diagnosticsEndpoint.isBlank() ||
+                            !state.vpnServiceRunning
+                    )
+                ) return
+
+                val auth = if (action.enabled) credentials.read() ?: return else null
+                srvStore.diagnosticsEnabled = action.enabled
+                state = state.copy(diagnosticsEnabled = action.enabled)
+                context.sendDiagnosticsChanged(auth)
+            }
+            is AppSettingsAction.SaveDiagnosticsCredential -> {
+                val endpoint = normalizeDiagnosticsEndpoint(action.endpoint) ?: return
+                val replacesCredentials = action.username.isNotBlank() || action.password.isNotBlank()
+                if (
+                    replacesCredentials &&
+                    (action.username.isBlank() || ':' in action.username || action.password.isBlank())
+                ) return
+                if (!replacesCredentials && !state.diagnosticsConfigured) return
+
+                srvStore.diagnosticsEnabled = false
+                val saved = !replacesCredentials || credentials.save(action.username, action.password)
+                if (!saved) {
+                    state = state.copy(diagnosticsEnabled = false)
+                    context.sendDiagnosticsChanged()
+                    return
+                }
+
+                srvStore.diagnosticsEndpoint = endpoint
+                state = state.copy(
+                    diagnosticsEnabled = false,
+                    diagnosticsConfigured = credentials.read() != null,
+                    diagnosticsEndpoint = endpoint,
+                )
+                context.sendDiagnosticsChanged()
+            }
+            AppSettingsAction.ClearDiagnosticsCredential -> {
+                srvStore.diagnosticsEnabled = false
+                credentials.clear()
+                state = state.copy(diagnosticsEnabled = false, diagnosticsConfigured = false)
+                context.sendDiagnosticsChanged()
+            }
         }
+    }
+
+    fun updateDiagnosticsStatus(status: DiagnosticsState) {
+        state = state.copy(diagnosticsState = status)
     }
 }

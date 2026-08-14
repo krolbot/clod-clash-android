@@ -6,6 +6,7 @@ import com.github.kr328.clash.common.util.componentName
 import com.github.kr328.clash.design.AppSettingsDesign
 import com.github.kr328.clash.design.model.Behavior
 import com.github.kr328.clash.design.store.UiStore.Companion.mainActivityAlias
+import com.github.kr328.clash.remote.Remote
 import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.util.ApplicationObserver
 import kotlinx.coroutines.isActive
@@ -20,6 +21,7 @@ class AppSettingsActivity : BaseActivity<AppSettingsDesign>(), Behavior {
             this,
             clashRunning,
             ::onHideIconChange,
+            Remote.broadcasts.diagnosticsState,
         )
 
         setContentDesign(design)
@@ -30,6 +32,8 @@ class AppSettingsActivity : BaseActivity<AppSettingsDesign>(), Behavior {
                     when (it) {
                         Event.ClashStart, Event.ClashStop, Event.ServiceRecreated ->
                             recreate()
+                        Event.DiagnosticsStatusChanged ->
+                            design.updateDiagnosticsStatus(Remote.broadcasts.diagnosticsState)
                         else -> Unit
                     }
                 }

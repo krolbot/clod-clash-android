@@ -2,6 +2,7 @@
 
 import com.android.build.gradle.AppExtension
 import com.android.build.gradle.BaseExtension
+import groovy.json.JsonOutput
 import java.net.URL
 import java.util.*
 
@@ -123,6 +124,16 @@ subprojects {
                 dimension = flavorDimensionList[0]
 
                 buildConfigField("boolean", "PREMIUM", "Boolean.parseBoolean(\"false\")")
+                buildConfigField(
+                    "boolean",
+                    "DIAGNOSTICS_AVAILABLE",
+                    rootProject.file("core/src/main/golang/native/diagnostics_credentials_generated.go").exists().toString(),
+                )
+                buildConfigField(
+                    "String",
+                    "DIAGNOSTICS_ENDPOINT",
+                    JsonOutput.toJson(System.getenv("DIAGNOSTICS_ENDPOINT").orEmpty()),
+                )
 
                 // resValue, а не строка в strings.xml: блок subprojects применяется ко ВСЕМ
                 // модулям, поэтому launch_name/application_name попадают в R каждого из них.

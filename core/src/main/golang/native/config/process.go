@@ -17,8 +17,8 @@ import (
 )
 
 var processors = []processor{
-	patchExternalController, // must before patchOverride, so we only apply ExternalController in Override settings
 	patchOverride,
+	patchExternalController,
 	patchGeneral,
 	patchProfile,
 	patchDns,
@@ -43,7 +43,8 @@ func patchOverride(cfg *config.RawConfig, _ string) error {
 }
 
 func patchExternalController(cfg *config.RawConfig, _ string) error {
-	cfg.ExternalController = ""
+	cfg.AllowLan = false
+	cfg.ExternalController = "127.0.0.1:9090"
 	cfg.ExternalControllerTLS = ""
 
 	return nil

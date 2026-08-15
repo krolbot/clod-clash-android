@@ -152,18 +152,25 @@ subprojects {
 
         signingConfigs {
             val keystore = rootProject.file("signing.properties")
-            if (keystore.exists()) {
+            if (isApp && keystore.exists()) {
                 create("release") {
                     val prop = Properties().apply {
                         keystore.inputStream().use(this::load)
                     }
 
-                    // clod: апстрим держал release.keystore прямо в репозитории.
-                    // Теперь путь задаётся в signing.properties (CI пишет его из секрета).
-                    storeFile = rootProject.file(prop.getProperty("keystore.path") ?: "release.keystore")
-                    storePassword = prop.getProperty("keystore.password")!!
-                    keyAlias = prop.getProperty("key.alias")!!
-                    keyPassword = prop.getProperty("key.password")!!
+                    fun requiredProperty(name: String): String =
+                        prop.getProperty(name)?.takeIf(String::isNotBlank)
+                            ?: throw GradleException("Missing release signing property: $name")
+
+                    val releaseKeystore = rootProject.file(requiredProperty("keystore.path"))
+                    if (!releaseKeystore.isFile) {
+                        throw GradleException("Release keystore does not exist")
+                    }
+
+                    storeFile = releaseKeystore
+                    storePassword = requiredProperty("keystore.password")
+                    keyAlias = requiredProperty("key.alias")
+                    keyPassword = requiredProperty("key.password")
                 }
             }
         }
@@ -172,7 +179,7 @@ subprojects {
             named("release") {
                 isMinifyEnabled = isApp
                 isShrinkResources = isApp
-                signingConfig = signingConfigs.findByName("release") ?: signingConfigs["debug"]
+                if (isApp) signingConfig = signingConfigs.findByName("release")
                 proguardFiles(
                     getDefaultProguardFile("proguard-android-optimize.txt"),
                     "proguard-rules.pro"

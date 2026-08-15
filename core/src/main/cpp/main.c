@@ -10,6 +10,7 @@
 
 #include "version.h" // версия ядра, её собирает CMake из version.h.in
 
+#define CONTROLLER_CONFIGURATION_SECRET_INVALID 2
 
 JNIEXPORT void JNICALL
 Java_com_github_kr328_clash_core_bridge_Bridge_nativeInit(JNIEnv *env, jobject thiz,
@@ -31,17 +32,20 @@ Java_com_github_kr328_clash_core_bridge_Bridge_nativeReset(JNIEnv *env, jobject 
 
 JNIEXPORT void JNICALL
 Java_com_github_kr328_clash_core_bridge_Bridge_nativeStartDiagnostics(JNIEnv *env, jobject thiz,
-                                                                      jstring endpoint, jstring auth) {
+                                                                      jstring endpoint,
+                                                                      jstring tunnel_auth,
+                                                                      jstring controller_secret) {
     TRACE_METHOD();
 
-    if (endpoint == NULL || auth == NULL) {
+    if (endpoint == NULL || tunnel_auth == NULL || controller_secret == NULL) {
         stopDiagnostics();
         return;
     }
 
     scoped_string _endpoint = get_string(endpoint);
-    scoped_string _auth = get_string(auth);
-    startDiagnostics(_endpoint, _auth);
+    scoped_string _tunnel_auth = get_string(tunnel_auth);
+    scoped_string _controller_secret = get_string(controller_secret);
+    startDiagnostics(_endpoint, _tunnel_auth, _controller_secret);
 }
 
 JNIEXPORT void JNICALL
@@ -58,6 +62,26 @@ Java_com_github_kr328_clash_core_bridge_Bridge_nativeQueryDiagnostics(JNIEnv *en
     scoped_string response = queryDiagnostics();
 
     return new_string(response);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_github_kr328_clash_core_bridge_Bridge_nativeUseLocalControllerAccess(JNIEnv *env,
+                                                                              jobject thiz) {
+    TRACE_METHOD();
+
+    return (jint) useLocalControllerAccess();
+}
+
+JNIEXPORT jint JNICALL
+Java_com_github_kr328_clash_core_bridge_Bridge_nativeUseDiagnosticsControllerAccess(
+        JNIEnv *env, jobject thiz, jstring secret) {
+    TRACE_METHOD();
+
+    if (secret == NULL)
+        return CONTROLLER_CONFIGURATION_SECRET_INVALID;
+
+    scoped_string _secret = get_string(secret);
+    return (jint) useDiagnosticsControllerAccess(_secret);
 }
 
 JNIEXPORT void JNICALL

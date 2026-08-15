@@ -16,14 +16,46 @@ internal fun initializeDiagnosticsEncryptionCipher(cipher: Cipher, key: SecretKe
     return cipher.iv
 }
 
-/** Device-bound, private storage for the manual Chisel client credential. */
+data class DiagnosticsCredential private constructor(
+    val username: String,
+    val password: String,
+) {
+    val chiselAuth: String
+        get() = "$username:$password"
+
+    val controllerSecret: String
+        get() = password
+
+    companion object {
+        fun create(username: String, password: String): DiagnosticsCredential? {
+            if (!username.isDiagnosticsCredentialComponent() || ':' in username ||
+                !password.isDiagnosticsCredentialComponent()
+            ) return null
+            return DiagnosticsCredential(username, password)
+        }
+
+        fun decode(value: String): DiagnosticsCredential? {
+            val separator = value.indexOf(':')
+            if (separator < 0) return null
+            return create(value.substring(0, separator), value.substring(separator + 1))
+        }
+    }
+}
+
+private fun String.isDiagnosticsCredentialComponent(): Boolean =
+    isNotEmpty() && all { it.code in 0x21..0x7e }
+
+/** Device-bound, private storage for diagnostics access. */
 class DiagnosticsCredentialStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    /** Returns only a successfully decrypted credential; invalid state fails closed. */
-    fun read(): String? {
-        val encodedCiphertext = preferences.getString(CIPHERTEXT, null) ?: return null
-        val encodedIv = preferences.getString(IV, null) ?: return null
+    /** Returns only a successfully decrypted and validated credential; invalid state fails closed. */
+    fun read(): DiagnosticsCredential? {
+        val encodedCiphertext = preferences.getString(CIPHERTEXT, null)
+        val encodedIv = preferences.getString(IV, null)
+        if (encodedCiphertext == null && encodedIv == null) return null
+        if (encodedCiphertext == null || encodedIv == null) return discardInvalidCredential()
+
         return runCatching {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(
@@ -31,24 +63,25 @@ class DiagnosticsCredentialStore(context: Context) {
                 key(),
                 GCMParameterSpec(TAG_LENGTH_BITS, Base64.decode(encodedIv, Base64.NO_WRAP))
             )
-            cipher.doFinal(Base64.decode(encodedCiphertext, Base64.NO_WRAP))
+            val plaintext = cipher.doFinal(Base64.decode(encodedCiphertext, Base64.NO_WRAP))
                 .toString(StandardCharsets.UTF_8)
-                .takeIf(String::isNotBlank)
-                ?: error("empty credential")
+            DiagnosticsCredential.decode(plaintext) ?: error("invalid diagnostics credential")
         }.getOrElse {
-            // A restored ciphertext cannot be decrypted by this device-bound key.
-            runCatching { keyStore.deleteEntry(KEY_ALIAS) }
-            preferences.edit().clear().commit()
-            null
+            discardInvalidCredential()
         }
     }
 
-    fun save(username: String, password: String): Boolean {
-        if (username.isBlank() || ':' in username || password.isBlank()) return false
+    private fun discardInvalidCredential(): DiagnosticsCredential? {
+        runCatching { keyStore.deleteEntry(KEY_ALIAS) }
+        preferences.edit().clear().commit()
+        return null
+    }
+
+    fun save(credential: DiagnosticsCredential): Boolean {
         return runCatching {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             val iv = initializeDiagnosticsEncryptionCipher(cipher, key())
-            val ciphertext = cipher.doFinal("$username:$password".toByteArray(StandardCharsets.UTF_8))
+            val ciphertext = cipher.doFinal(credential.chiselAuth.toByteArray(StandardCharsets.UTF_8))
             preferences.edit()
                 .putString(CIPHERTEXT, Base64.encodeToString(ciphertext, Base64.NO_WRAP))
                 .putString(IV, Base64.encodeToString(iv, Base64.NO_WRAP))

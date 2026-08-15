@@ -49,12 +49,8 @@ fun Context.sendOverrideChanged() {
     sendBroadcastSelf(intent)
 }
 
-fun Context.sendDiagnosticsChanged(auth: String? = null) {
-    sendBroadcastSelf(
-        Intent(Intents.ACTION_DIAGNOSTICS_CHANGED).apply {
-            if (auth != null) putExtra(Intents.EXTRA_DIAGNOSTICS_AUTH, auth)
-        }
-    )
+fun Context.sendDiagnosticsChanged() {
+    sendBroadcastSelf(Intent(Intents.ACTION_DIAGNOSTICS_CHANGED))
 }
 
 fun Context.sendDiagnosticsStatus(status: DiagnosticsState) {

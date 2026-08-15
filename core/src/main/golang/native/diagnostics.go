@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -22,16 +22,30 @@ const (
 	diagnosticsTargetAddress  = "127.0.0.1:9090"
 	diagnosticsProbePath      = "/controller/version"
 	diagnosticsRemote         = "R:" + diagnosticsReverseAddress + ":" + diagnosticsTargetAddress
+	controllerBearerScheme    = "Bearer "
+	controllerResponseLimit   = 64 * 1024
 )
 
-// These values are intentionally empty in source builds. CI may temporarily add
-// diagnostics_credentials_generated.go, whose init assigns it. It must never
-// be read from preferences, files, or the network.
+var (
+	errDiagnosticsFingerprintMissing = errors.New("diagnostics fingerprint is missing")
+	errDiagnosticsAuthMissing        = errors.New("diagnostics authentication is missing")
+	errDiagnosticsEndpointInvalid    = errors.New("diagnostics endpoint is invalid")
+	errControllerProbeRequest        = errors.New("controller probe request is invalid")
+	errControllerProbeTransport      = errors.New("controller probe transport failed")
+	errControllerProbeStatus         = errors.New("controller probe returned an unexpected status")
+	errControllerProbePayload        = errors.New("controller probe returned an invalid payload")
+)
+
+// Empty in source builds. CI generates an untracked Go file whose init assigns it.
 var diagnosticsFingerprint string
 
 type diagnosticsStatus struct {
 	Available bool `json:"available"`
 	Running   bool `json:"running"`
+}
+
+type controllerVersion struct {
+	Version string `json:"version"`
 }
 
 var diagnostics = struct {
@@ -40,73 +54,44 @@ var diagnostics = struct {
 	running bool
 }{}
 
-func diagnosticsLog(warning bool, message string) {
-	if warning {
-		log.Warnln("[APP] [Diagnostics] %s", message)
-	} else {
-		log.Infoln("[APP] [Diagnostics] %s", message)
-	}
+func diagnosticsInfo(message string) {
+	log.Infoln("[APP] [Diagnostics] %s", message)
 }
 
-func diagnosticsChiselEvent(event chisel.Event) {
-	context := "Chisel"
-	switch event.Stage {
-	case chisel.EventStageConnect:
-		context = "Подключение"
-	case chisel.EventStageDNS:
-		context = "DNS"
-	case chisel.EventStageNetwork:
-		context = "Сеть"
-	case chisel.EventStageWebSocket:
-		context = "WebSocket"
-	case chisel.EventStageSSH:
-		context = "SSH"
-	case chisel.EventStageFingerprint:
-		context = "Проверка fingerprint"
-	case chisel.EventStageAuth:
-		context = "Авторизация"
-	case chisel.EventStageReverseConfig:
-		context = fmt.Sprintf("Reverse listen=%s target=%s", diagnosticsReverseAddress, diagnosticsTargetAddress)
-	case chisel.EventStageTunnel:
-		context = fmt.Sprintf("Туннель listen=%s target=%s", diagnosticsReverseAddress, diagnosticsTargetAddress)
-	case chisel.EventStageRetry:
-		context = "Повтор"
-	}
-
-	message := fmt.Sprintf("%s; stage=%s result=%s", context, event.Stage, event.Result)
-	if event.Attempt > 0 {
-		message += fmt.Sprintf(" attempt=%d", event.Attempt)
-	}
-	if event.HTTPStatus > 0 {
-		message += fmt.Sprintf(" http=%d", event.HTTPStatus)
-	}
-	diagnosticsLog(event.Result == chisel.EventResultFailed || event.Result == chisel.EventResultDisconnected, message)
+func diagnosticsWarning(message string) {
+	log.Warnln("[APP] [Diagnostics] %s", message)
 }
 
-func normalizeDiagnosticsEndpoint(raw string) (string, bool) {
+func normalizeDiagnosticsEndpoint(raw string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Hostname() == "" || parsed.User != nil ||
 		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", false
+		return "", errDiagnosticsEndpointInvalid
 	}
 
 	host := strings.ToLower(parsed.Hostname())
 	if port := parsed.Port(); port != "" {
 		portNumber, err := strconv.Atoi(port)
 		if err != nil || portNumber < 1 || portNumber > 65535 {
-			return "", false
+			return "", errDiagnosticsEndpointInvalid
 		}
 		host = net.JoinHostPort(host, port)
 	} else if strings.Contains(host, ":") {
 		host = "[" + host + "]"
 	}
-	return "https://" + host, true
+	return "https://" + host, nil
 }
 
-func diagnosticsConfiguration(endpoint, auth string) (chisel.Config, bool) {
-	server, validEndpoint := normalizeDiagnosticsEndpoint(endpoint)
-	if !validEndpoint || strings.TrimSpace(diagnosticsFingerprint) == "" || strings.TrimSpace(auth) == "" {
-		return chisel.Config{}, false
+func newDiagnosticsConfiguration(endpoint, auth string) (chisel.Config, error) {
+	if strings.TrimSpace(diagnosticsFingerprint) == "" {
+		return chisel.Config{}, errDiagnosticsFingerprintMissing
+	}
+	if strings.TrimSpace(auth) == "" {
+		return chisel.Config{}, errDiagnosticsAuthMissing
+	}
+	server, err := normalizeDiagnosticsEndpoint(endpoint)
+	if err != nil {
+		return chisel.Config{}, err
 	}
 
 	return chisel.Config{
@@ -115,18 +100,28 @@ func diagnosticsConfiguration(endpoint, auth string) (chisel.Config, bool) {
 		Auth:          auth,
 		Remotes:       []string{diagnosticsRemote},
 		MaxRetryCount: -1,
-		EventHandler:  diagnosticsChiselEvent,
-		DisableLogger: true,
 		TLS: chisel.TLSConfig{
 			SkipVerify: false,
 		},
-	}, true
+	}, nil
 }
 
-func diagnosticsStart(endpoint, auth string) {
-	config, available := diagnosticsConfiguration(endpoint, auth)
-	if !available {
-		diagnosticsLog(true, "Запуск отклонён: конфигурация недоступна")
+func newDiagnosticsClient(configuration chisel.Config) (*chisel.Client, error) {
+	client, err := chisel.NewClient(&configuration)
+	if err != nil {
+		return nil, err
+	}
+	// Chisel's raw logger can include transport details. App diagnostics expose
+	// only the bounded lifecycle messages below.
+	client.Logger.Info = false
+	client.Logger.Debug = false
+	return client, nil
+}
+
+func diagnosticsStart(endpoint, auth, controllerSecret string) {
+	configuration, err := newDiagnosticsConfiguration(endpoint, auth)
+	if err != nil {
+		diagnosticsWarning("Запуск отклонён: конфигурация недоступна")
 		return
 	}
 
@@ -136,45 +131,51 @@ func diagnosticsStart(endpoint, auth string) {
 		return
 	}
 
-	client, err := chisel.NewClient(&config)
+	client, err := newDiagnosticsClient(configuration)
 	if err != nil {
 		diagnostics.Unlock()
-		diagnosticsLog(true, "Не удалось создать клиент")
+		diagnosticsWarning("Не удалось создать клиент")
 		return
 	}
 	if err = client.Start(context.Background()); err != nil {
 		_ = client.Close()
 		diagnostics.Unlock()
-		diagnosticsLog(true, "Не удалось запустить клиент")
+		diagnosticsWarning("Не удалось запустить клиент")
 		return
 	}
 
 	diagnostics.client = client
 	diagnostics.running = false
 	diagnostics.Unlock()
-	diagnosticsLog(false, fmt.Sprintf("Канал запущен: reverse=%s target=%s probe=%s", diagnosticsReverseAddress, diagnosticsTargetAddress, diagnosticsProbePath))
+	diagnosticsInfo("Канал запущен")
 
-	go diagnosticsProbeLoop(client, config.Server+diagnosticsProbePath)
-
-	go func() {
-		client.Wait()
-
-		diagnostics.Lock()
-		if diagnostics.client != client {
-			diagnostics.Unlock()
-			return
-		}
-		diagnostics.client = nil
-		diagnostics.running = false
-		diagnostics.Unlock()
-		diagnosticsLog(true, "Канал остановлен")
-	}()
+	go diagnosticsProbeLoop(client, configuration.Server+diagnosticsProbePath, controllerSecret)
+	go diagnosticsWait(client)
 }
 
-func diagnosticsProbeLoop(client *chisel.Client, endpoint string) {
+func diagnosticsWait(client *chisel.Client) {
+	waitErr := client.Wait()
+
+	diagnostics.Lock()
+	if diagnostics.client != client {
+		diagnostics.Unlock()
+		return
+	}
+	diagnostics.client = nil
+	diagnostics.running = false
+	diagnostics.Unlock()
+
+	if waitErr != nil {
+		diagnosticsWarning("Канал остановлен из-за внутренней ошибки")
+	} else {
+		diagnosticsWarning("Канал остановлен")
+	}
+}
+
+func diagnosticsProbeLoop(client *chisel.Client, endpoint, controllerSecret string) {
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	for {
-		ready := diagnosticsControllerReady(httpClient, endpoint)
+		ready := probeDiagnosticsController(httpClient, endpoint, controllerSecret) == nil
 
 		diagnostics.Lock()
 		if diagnostics.client != client {
@@ -187,9 +188,9 @@ func diagnosticsProbeLoop(client *chisel.Client, endpoint string) {
 
 		if ready != wasReady {
 			if ready {
-				diagnosticsLog(false, "Контроллер подключён")
+				diagnosticsInfo("Контроллер подключён")
 			} else {
-				diagnosticsLog(true, "Связь с контроллером потеряна")
+				diagnosticsWarning("Связь с контроллером потеряна")
 			}
 		}
 
@@ -197,15 +198,35 @@ func diagnosticsProbeLoop(client *chisel.Client, endpoint string) {
 	}
 }
 
-func diagnosticsControllerReady(client *http.Client, endpoint string) bool {
-	response, err := client.Get(endpoint)
+func probeDiagnosticsController(client *http.Client, endpoint, controllerSecret string) error {
+	if strings.TrimSpace(controllerSecret) == "" {
+		return errControllerProbeRequest
+	}
+	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
-		return false
+		return errControllerProbeRequest
+	}
+	request.Header.Set("Authorization", controllerBearerScheme+controllerSecret)
+
+	response, err := client.Do(request)
+	if err != nil {
+		return errControllerProbeTransport
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return errControllerProbeStatus
+	}
 
-	payload, err := io.ReadAll(io.LimitReader(response.Body, 64*1024))
-	return err == nil && response.StatusCode == http.StatusOK && json.Valid(payload)
+	decoder := json.NewDecoder(io.LimitReader(response.Body, controllerResponseLimit))
+	var payload controllerVersion
+	if err := decoder.Decode(&payload); err != nil || strings.TrimSpace(payload.Version) == "" {
+		return errControllerProbePayload
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return errControllerProbePayload
+	}
+	return nil
 }
 
 func diagnosticsStop() {
@@ -217,7 +238,7 @@ func diagnosticsStop() {
 
 	if client != nil {
 		_ = client.Close()
-		diagnosticsLog(false, "Канал выключен")
+		diagnosticsInfo("Канал выключен")
 	}
 }
 

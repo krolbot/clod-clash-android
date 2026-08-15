@@ -37,6 +37,9 @@ func coreInit(home, versionName, gitVersion C.c_string, sdkVersion C.int) {
 //export reset
 func reset() {
 	diagnosticsStop()
+	if err := config.RotateExternalControllerSecret(); err != nil {
+		panic(err)
+	}
 	config.LoadDefault()
 	tunnel.ResetStatistic()
 	tunnel.CloseAllConnections()
@@ -46,8 +49,8 @@ func reset() {
 }
 
 //export startDiagnostics
-func startDiagnostics(endpoint, auth C.c_string) {
-	diagnosticsStart(C.GoString(endpoint), C.GoString(auth))
+func startDiagnostics(endpoint, tunnelAuth, controllerSecret C.c_string) {
+	diagnosticsStart(C.GoString(endpoint), C.GoString(tunnelAuth), C.GoString(controllerSecret))
 }
 
 //export stopDiagnostics

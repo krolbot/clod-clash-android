@@ -45,6 +45,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
+          cache: false
           go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
           go-version: '1.26'
 
@@ -92,19 +93,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${KEYSTORE_BASE64:-}" ]]; then
-            echo "::error::Секрет KEYSTORE_BASE64 не задан — ночная сборка будет неустановимой поверх релиза"
-            exit 1
-          fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          {
-            echo "keystore.path=$RUNNER_TEMP/release.keystore"
-            echo "keystore.password=$KEYSTORE_PASSWORD"
-            echo "key.alias=$KEY_ALIAS"
-            echo "key.password=$KEY_PASSWORD"
-          } > signing.properties
+        run: .github/scripts/configure-signing.sh
 
       - name: Сборка
         env:
@@ -112,6 +101,13 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_RELEASE: io.clodclash.app@${{ steps.v.outputs.version }}+${{ github.sha }}
         run: ./gradlew --no-daemon app:assembleStandardRelease
+
+      - name: Удалить signing inputs
+        if: always()
+        run: rm -f signing.properties "$RUNNER_TEMP/release.keystore"
+
+      - name: Проверить подпись APK
+        run: .github/scripts/verify-apk-signatures.sh app/build/outputs/apk/standard/release
 
       - name: Проверка выравнивания 16 KB
         run: |

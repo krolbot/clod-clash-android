@@ -4,7 +4,7 @@ import android.app.Service
 import com.github.kr328.clash.common.constants.Intents
 import com.github.kr328.clash.common.model.DiagnosticsState
 import com.github.kr328.clash.core.Clash
-import com.github.kr328.clash.service.store.DiagnosticsCredentialStore
+import com.github.kr328.clash.core.model.DiagnosticsAccess
 import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.service.store.normalizeDiagnosticsEndpoint
 import com.github.kr328.clash.service.util.sendDiagnosticsStatus
@@ -16,9 +16,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 /** Runs only while the already-started Clash service owns the core. */
-class DiagnosticsModule(service: Service) : Module<Unit>(service) {
+class DiagnosticsModule(
+    service: Service,
+    private val access: DiagnosticsAccess?,
+) : Module<Unit>(service) {
     private val store = ServiceStore(service)
-    private val credentials = DiagnosticsCredentialStore(service)
 
     override suspend fun run() {
         val changes = receiveBroadcast(capacity = Channel.CONFLATED) {
@@ -26,12 +28,9 @@ class DiagnosticsModule(service: Service) : Module<Unit>(service) {
         }
 
         try {
-            applySetting(credentials.read())
+            applySetting()
             while (currentCoroutineContext().isActive) {
-                val intent = changes.tryReceive().getOrNull()
-                if (intent != null) {
-                    applySetting(intent.getStringExtra(Intents.EXTRA_DIAGNOSTICS_AUTH))
-                }
+                if (changes.tryReceive().isSuccess) applySetting()
                 publishStatus()
                 delay(1_000)
             }
@@ -43,11 +42,11 @@ class DiagnosticsModule(service: Service) : Module<Unit>(service) {
         }
     }
 
-    private fun applySetting(auth: String?) {
+    private fun applySetting() {
         val status = Clash.queryDiagnostics()
         val endpoint = normalizeDiagnosticsEndpoint(store.diagnosticsEndpoint)
-        if (store.diagnosticsEnabled && status.available && endpoint != null && auth != null) {
-            Clash.startDiagnostics(endpoint, auth)
+        if (store.diagnosticsEnabled && status.available && endpoint != null && access != null) {
+            Clash.startDiagnostics(endpoint, access)
         } else {
             Clash.stopDiagnostics()
         }

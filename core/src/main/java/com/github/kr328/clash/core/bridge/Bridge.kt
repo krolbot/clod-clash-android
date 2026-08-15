@@ -11,9 +11,11 @@ import java.io.File
 @Keep
 object Bridge {
     external fun nativeReset()
-    external fun nativeStartDiagnostics(endpoint: String, auth: String)
+    external fun nativeStartDiagnostics(endpoint: String, tunnelAuth: String, controllerSecret: String)
     external fun nativeStopDiagnostics()
     external fun nativeQueryDiagnostics(): String
+    external fun nativeUseLocalControllerAccess(): Int
+    external fun nativeUseDiagnosticsControllerAccess(secret: String): Int
     external fun nativeForceGc()
     external fun nativeSuspend(suspend: Boolean)
     external fun nativeQueryTunnelState(): String

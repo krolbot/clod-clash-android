@@ -15,6 +15,7 @@ import com.github.kr328.clash.design.compose.theme.ClodClashTheme
 import com.github.kr328.clash.design.model.Behavior
 import com.github.kr328.clash.design.model.DarkMode
 import com.github.kr328.clash.design.store.UiStore
+import com.github.kr328.clash.service.store.DiagnosticsCredential
 import com.github.kr328.clash.service.store.DiagnosticsCredentialStore
 import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.service.store.normalizeDiagnosticsEndpoint
@@ -135,22 +136,25 @@ class AppSettingsDesign(
                     )
                 ) return
 
-                val auth = if (action.enabled) credentials.read() ?: return else null
+                if (action.enabled && credentials.read() == null) return
                 srvStore.diagnosticsEnabled = action.enabled
                 state = state.copy(diagnosticsEnabled = action.enabled)
-                context.sendDiagnosticsChanged(auth)
+                context.sendDiagnosticsChanged()
             }
             is AppSettingsAction.SaveDiagnosticsCredential -> {
+                if (state.vpnServiceRunning) return
                 val endpoint = normalizeDiagnosticsEndpoint(action.endpoint) ?: return
                 val replacesCredentials = action.username.isNotBlank() || action.password.isNotBlank()
-                if (
-                    replacesCredentials &&
-                    (action.username.isBlank() || ':' in action.username || action.password.isBlank())
-                ) return
                 if (!replacesCredentials && !state.diagnosticsConfigured) return
 
+                val replacement = if (replacesCredentials) {
+                    DiagnosticsCredential.create(action.username, action.password) ?: return
+                } else {
+                    null
+                }
+
                 srvStore.diagnosticsEnabled = false
-                val saved = !replacesCredentials || credentials.save(action.username, action.password)
+                val saved = replacement == null || credentials.save(replacement)
                 if (!saved) {
                     state = state.copy(diagnosticsEnabled = false)
                     context.sendDiagnosticsChanged()
@@ -166,6 +170,7 @@ class AppSettingsDesign(
                 context.sendDiagnosticsChanged()
             }
             AppSettingsAction.ClearDiagnosticsCredential -> {
+                if (state.vpnServiceRunning) return
                 srvStore.diagnosticsEnabled = false
                 credentials.clear()
                 state = state.copy(diagnosticsEnabled = false, diagnosticsConfigured = false)

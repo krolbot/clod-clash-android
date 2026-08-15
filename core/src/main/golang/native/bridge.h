@@ -52,8 +52,12 @@ extern void log_debug(char *msg);
 
 extern void log_verbose(char *msg);
 
-extern void startDiagnostics(c_string endpoint, c_string auth);
+extern void startDiagnostics(c_string endpoint, c_string tunnel_auth, c_string controller_secret);
 
 extern void stopDiagnostics(void);
 
 extern char *queryDiagnostics(void);
+
+extern int useLocalControllerAccess(void);
+
+extern int useDiagnosticsControllerAccess(c_string secret);

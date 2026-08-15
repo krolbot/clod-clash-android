@@ -117,6 +117,7 @@ jobs:
       # Без них ломаются armeabi-v7a на старых ядрах и pidfd на Android.
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
+          cache: false
           go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
           go-version: '1.26'
 
@@ -146,29 +147,15 @@ jobs:
           sudo update-ca-certificates
           cp -f /etc/ssl/certs/ca-certificates.crt core/src/foss/golang/clash/component/ca/ca-certificates.crt
 
-      # Ключ подписи приходит из секрета base64. В репозитории его нет и быть не должно:
-      # тот же ключ = единственное условие, при котором обновление ставится поверх
-      # установленного приложения без потери данных.
+      # Signing material exists only for the release build and is removed even
+      # when Gradle fails. Every input is required; there is no debug-key fallback.
       - name: Ключ подписи из секретов
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${KEYSTORE_BASE64:-}" ]]; then
-            echo "::error::Секрет KEYSTORE_BASE64 не задан — релиз нельзя подписать"
-            exit 1
-          fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          {
-            echo "keystore.path=$RUNNER_TEMP/release.keystore"
-            echo "keystore.password=$KEYSTORE_PASSWORD"
-            echo "key.alias=$KEY_ALIAS"
-            echo "key.password=$KEY_PASSWORD"
-          } > signing.properties
-          # Содержимое в лог не печатаем (апстрим печатал).
+        run: .github/scripts/configure-signing.sh
 
       - name: Сборка релиза
         env:
@@ -176,6 +163,13 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_RELEASE: io.clodclash.app@${{ needs.check_version.outputs.version }}+${{ github.sha }}
         run: ./gradlew --no-daemon app:assembleStandardRelease
+
+      - name: Удалить signing inputs
+        if: always()
+        run: rm -f signing.properties "$RUNNER_TEMP/release.keystore"
+
+      - name: Проверить подпись APK
+        run: .github/scripts/verify-apk-signatures.sh app/build/outputs/apk/standard/release
 
       # 16 KB page size: с NDK r29 выравнивание получается само, но "само" —
       # это не гарантия. Проверяем явно, иначе на новых устройствах библиотеки

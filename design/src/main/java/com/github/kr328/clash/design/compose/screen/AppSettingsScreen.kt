@@ -28,6 +28,7 @@ import com.github.kr328.clash.design.compose.component.ActivityScaffold
 import com.github.kr328.clash.design.compose.component.SectionHeader
 import com.github.kr328.clash.design.compose.component.SelectRow
 import com.github.kr328.clash.design.compose.component.SwitchRow
+import com.github.kr328.clash.service.store.DiagnosticsCredential
 import com.github.kr328.clash.service.store.normalizeDiagnosticsEndpoint
 
 /**
@@ -184,7 +185,7 @@ fun AppSettingsScreen(
                     endpoint = state.diagnosticsEndpoint
                     credentialDialog = true
                 },
-                enabled = state.diagnosticsAvailable,
+                enabled = state.diagnosticsAvailable && !state.vpnServiceRunning,
             ) {
                 Text(
                     stringResource(
@@ -253,7 +254,7 @@ fun AppSettingsScreen(
                 Button(
                     enabled = normalizeDiagnosticsEndpoint(endpoint) != null && (
                         (state.diagnosticsConfigured && username.isBlank() && password.isBlank()) ||
-                            (username.isNotBlank() && ':' !in username && password.isNotBlank())
+                            DiagnosticsCredential.create(username, password) != null
                     ),
                     onClick = {
                         onAction(

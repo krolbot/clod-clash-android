@@ -1,6 +1,7 @@
 package com.github.kr328.clash.design.compose.screen
 
 import android.graphics.BitmapFactory
+import android.text.format.Formatter
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -15,6 +16,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
@@ -54,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -67,6 +71,7 @@ import com.github.kr328.clash.design.compose.component.ConnectionStatus
 import com.github.kr328.clash.design.compose.component.PowerButton
 import com.github.kr328.clash.design.compose.component.SectionHeader
 import com.github.kr328.clash.design.compose.component.NoServersCard
+import com.github.kr328.clash.design.compose.component.PingBadge
 import com.github.kr328.clash.design.compose.component.SelectorRow
 import com.github.kr328.clash.design.compose.component.SyncIconButton
 import com.github.kr328.clash.design.compose.component.noServersReason
@@ -74,9 +79,11 @@ import com.github.kr328.clash.design.compose.component.TrafficCard
 import com.github.kr328.clash.design.compose.theme.ClodTheme
 import com.github.kr328.clash.design.compose.theme.StatusTextStyle
 import com.github.kr328.clash.design.compose.theme.TimerTextStyle
+import com.github.kr328.clash.design.model.providerLinks
 import com.github.kr328.clash.service.model.PanelInfo
 import com.github.kr328.clash.service.model.Profile
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /** Вкладки нижней навигации. Порядок совпадает с утверждённым макетом. */
 enum class MainTab {
@@ -358,8 +365,7 @@ private fun HomeTab(state: MainScreenState, onAction: (MainAction) -> Unit) {
             .padding(horizontal = 16.dp),
     ) {
         MainHeader(
-            profileName = state.active?.title,
-            logoPath = state.active?.logoPath,
+            active = state.active,
             updating = state.subscriptions.updating,
             onAction = onAction,
         )
@@ -462,11 +468,24 @@ private fun HomeTab(state: MainScreenState, onAction: (MainAction) -> Unit) {
         // которой два сантиметра вниз, а название активной подписки и так стоит
         // в шапке экрана.
         state.servers.groups.getOrNull(state.servers.selected)?.let { group ->
+            // Показываем узел так же, как его показывает вкладка «Серверы»:
+            // `now` — это внутреннее имя, а у панели рядом с ним лежит title
+            // (то же имя, но с флагом) и измеренная задержка. Задержка уже
+            // посчитана и лежит в состоянии — до этой правки главный экран её
+            // просто не показывал, хотя место под неё в `SelectorRow` есть.
+            val current = group.proxies.firstOrNull { it.name == group.now }
+
             SelectorRow(
                 label = group.name,
-                value = group.now.ifBlank { stringResource(R.string.proxy) },
+                value = current?.title
+                    ?: group.now.ifBlank { stringResource(R.string.proxy) },
                 leading = painterResource(R.drawable.ic_nav_servers),
                 onClick = { onAction(MainAction.SelectTab(MainTab.Servers)) },
+                trailing = if (current != null) {
+                    { PingBadge(current.delay) }
+                } else {
+                    null
+                },
             )
         }
 
@@ -474,13 +493,27 @@ private fun HomeTab(state: MainScreenState, onAction: (MainAction) -> Unit) {
     }
 }
 
+/**
+ * Шапка главного экрана: логотип провайдера, название подписки и — второй
+ * строкой — её состояние.
+ *
+ * Строка состояния появилась не для красоты. Срок и остаток трафика до этого
+ * было видно только в подключённом состоянии: карточка подписки на главном
+ * рисуется через `ActiveSubscriptionCard`, а она выходит по
+ * `if (!expanded && !critical) return`. То есть на спокойном отключённом
+ * экране — том самом, который человек видит сразу после запуска, — ответа на
+ * вопрос «а подписка ещё жива?» не было нигде. Строка отвечает на него, не
+ * занимая места у кнопки подключения.
+ */
 @Composable
 private fun MainHeader(
-    profileName: String?,
-    logoPath: String?,
+    active: SubscriptionItem?,
     updating: Boolean,
     onAction: (MainAction) -> Unit,
 ) {
+    val profileName = active?.title
+    val logoPath = active?.logoPath
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -500,29 +533,99 @@ private fun MainHeader(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(9.dp)),
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(12.dp)),
             )
         } else {
             Image(
                 painter = painterResource(R.drawable.ic_clash),
                 contentDescription = null,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(36.dp),
             )
         }
         Spacer(Modifier.width(12.dp))
-        Text(
-            text = profileName ?: stringResource(R.string.application_name),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = profileName ?: stringResource(R.string.application_name),
+                // titleMedium вместо titleLarge: заголовок съехал на строку
+                // вверх, под ним теперь состояние, и 22 sp в паре с ним
+                // выглядели заголовком экрана, а не именем подписки.
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (active != null) {
+                SubscriptionSummary(active)
+            }
+        }
         SyncIconButton(
             spinning = updating,
             contentDescription = stringResource(R.string.clod_refresh_profile),
             onClick = { onAction(MainAction.UpdateAllProfiles) },
+        )
+    }
+}
+
+/**
+ * Состояние подписки одной строкой: точка цвета состояния, само состояние,
+ * сколько осталось дней и сколько израсходовано трафика.
+ *
+ * Точка нужна отдельно от слова: цветное слово «Истекает» на янтарном читается
+ * хуже, чем серое слово с янтарной точкой, а на светлой теме янтарный текст
+ * 12 sp ещё и не проходит по контрасту.
+ *
+ * Ни срока, ни лимита трафика панель может не прислать вовсе (ноль в обоих
+ * полях — «ограничения нет», а не «ноль осталось»). Тогда строки просто нет:
+ * «Активна · · » ничего не сообщает.
+ */
+@Composable
+private fun SubscriptionSummary(item: SubscriptionItem) {
+    val context = LocalContext.current
+    val profile = item.profile
+    val now = remember(profile) { System.currentTimeMillis() + item.panelClockSkew() }
+    val status = subscriptionState(profile, now)
+    val used = profile.upload + profile.download
+
+    // Строки читаются заранее и по отдельности: собирать их внутри `buildList`
+    // значило бы звать `stringResource` из лямбды-строителя, а это чтение
+    // ресурса в композиции по условию — Compose такое разрешает не везде,
+    // и падать это будет на сборке, а не здесь.
+    val label = status.label()
+    val days = if (profile.expire > 0) {
+        ((profile.expire - now) / TimeUnit.DAYS.toMillis(1)).toInt()
+    } else {
+        -1
+    }
+    val daysText = if (days >= 0) stringResource(R.string.clod_sub_days, days) else null
+    val trafficText = when {
+        profile.total > 0 -> Formatter.formatShortFileSize(context, used) + " / " +
+            Formatter.formatShortFileSize(context, profile.total)
+
+        used > 0 -> Formatter.formatShortFileSize(context, used)
+        else -> null
+    }
+
+    val parts = listOfNotNull(label, daysText, trafficText)
+
+    // Одно только состояние без цифр — это то же самое, что уже написано
+    // цветом точки; ради него строку не заводим.
+    if (parts.size < 2) return
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(status.color()),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = parts.joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -706,6 +809,40 @@ private fun ModeRow(mode: TunnelState.Mode, locked: Boolean, onAction: (MainActi
     }
 }
 
+/**
+ * Ссылки провайдера первым блоком настроек.
+ *
+ * Все пять приходят заголовками подписки: кабинет (`clod-portal-url`),
+ * поддержка (`support-url`), бот (`clod-bot-url`), мониторинг
+ * (`clod-monitor-url`) и инструкция (`clod-guide-url`). Порядок тот же, что
+ * на ПК: человек, которому объяснили по одному клиенту, ищет их на том же
+ * месте и во втором.
+ *
+ * Блок принадлежит ТЕКУЩЕЙ подписке и назван её именем: у разных провайдеров
+ * свои кабинеты и свои боты, и перепутать их нельзя. Ни одной ссылки не
+ * прислали — блока нет вовсе: пустой заголовок сообщает только о поломке.
+ *
+ * Первым он стоит потому, что это единственные строки на экране, которые
+ * ведут не в приложение, а к тому, кто выдал подписку: настройки самого
+ * приложения человек листает, а к провайдеру идёт с вопросом.
+ */
+@Composable
+private fun ProviderLinksSection(active: SubscriptionItem?, onAction: (MainAction) -> Unit) {
+    val links = providerLinks(active?.panel)
+
+    if (links.isEmpty() || active == null) return
+
+    SectionHeader(active.title)
+
+    links.forEach { link ->
+        ActionRow(
+            title = stringResource(link.title),
+            icon = painterResource(link.icon),
+            onClick = { onAction(MainAction.OpenUrl(link.url)) },
+        )
+    }
+}
+
 @Composable
 private fun MoreTab(state: MainScreenState, onAction: (MainAction) -> Unit) {
     Surface(color = MaterialTheme.colorScheme.background) {
@@ -720,6 +857,9 @@ private fun MoreTab(state: MainScreenState, onAction: (MainAction) -> Unit) {
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(start = 18.dp, top = 20.dp, bottom = 12.dp),
             )
+
+            ProviderLinksSection(state.active, onAction)
+
             SectionHeader(stringResource(R.string.clod_section_connection))
             ModeRow(
                 mode = state.mode,
@@ -777,28 +917,6 @@ private fun MoreTab(state: MainScreenState, onAction: (MainAction) -> Unit) {
             )
 
             SectionHeader(stringResource(R.string.clod_section_support))
-
-            // clod: кабинет и поддержка провайдера. На главном экране они живут
-            // в карточке подписки, то есть видны в сессии и когда с подпиской
-            // что-то не так; в спокойном состоянии карточки нет, и искать их
-            // человек будет здесь — рядом с помощью и логами.
-            state.active?.panel?.let { panel ->
-                if (panel.portalUrl.isNotBlank()) {
-                    ActionRow(
-                        title = stringResource(R.string.clod_portal),
-                        icon = painterResource(R.drawable.ic_baseline_account),
-                        onClick = { onAction(MainAction.OpenUrl(panel.portalUrl)) },
-                    )
-                }
-                if (panel.supportUrl.isNotBlank()) {
-                    ActionRow(
-                        title = stringResource(R.string.clod_support),
-                        icon = painterResource(R.drawable.ic_baseline_chat),
-                        onClick = { onAction(MainAction.OpenUrl(panel.supportUrl)) },
-                    )
-                }
-            }
-
             ActionRow(
                 title = stringResource(R.string.logs),
                 icon = painterResource(R.drawable.ic_baseline_assignment),

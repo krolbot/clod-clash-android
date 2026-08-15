@@ -492,10 +492,47 @@ func TestApplyHeadersResetsStateFields(t *testing.T) {
 		t.Fatalf("пороги должны сбрасываться: %#v %#v", info.NotifyExpireDays, info.NotifyTrafficPercent)
 	}
 
-	// А вот название держится до следующего непустого: пропадать между
-	// обновлениями баннеру нельзя.
+	// А вот название держится до следующего непустого: под ним подписка лежит
+	// в списке, и остаться без имени из-за одного ответа она не должна.
 	if info.Title != "Провайдер" {
 		t.Fatalf("название не должно теряться, получено %q", info.Title)
+	}
+}
+
+func TestApplyHeadersPanelTextsFollowPanel(t *testing.T) {
+	// Объявление, промо, логотип и текст для диалога устройства — тоже
+	// состояние последнего ответа. Снятое провайдером объявление висело бы
+	// вечно, а логотип прежнего провайдера — поверх нового.
+	info := Info{
+		Title:            "Провайдер",
+		LogoURL:          "https://old.example/logo.png",
+		Announce:         "Работы с 3 до 5",
+		AnnounceURL:      "https://old.example/news",
+		Promo:            "Скидка 30%",
+		PromoURL:         "https://old.example/sale",
+		HwidLimitMessage: "Отвяжите старое устройство в кабинете",
+	}
+
+	ApplyHeaders(&info, map[string][]string{"profile-title": {"Провайдер"}}, "https://panel.example.com/sub")
+
+	if info.Announce != "" || info.AnnounceURL != "" {
+		t.Fatalf("объявление осталось: %q %q", info.Announce, info.AnnounceURL)
+	}
+
+	if info.Promo != "" || info.PromoURL != "" {
+		t.Fatalf("промо осталось: %q %q", info.Promo, info.PromoURL)
+	}
+
+	if info.LogoURL != "" {
+		t.Fatalf("логотип остался: %q", info.LogoURL)
+	}
+
+	if info.HwidLimitMessage != "" {
+		t.Fatalf("текст для диалога устройства остался: %q", info.HwidLimitMessage)
+	}
+
+	if info.Title != "Провайдер" {
+		t.Fatalf("название = %q", info.Title)
 	}
 }
 
@@ -692,5 +729,147 @@ func TestDescription(t *testing.T) {
 
 	if !strings.HasSuffix(got, "…") {
 		t.Fatalf("у обрезанного описания должно быть многоточие, получено %q", got)
+	}
+}
+
+func TestApplyHeadersProviderLinks(t *testing.T) {
+	// Пять ссылок провайдера, те же, что на ПК. Проверка у бота своя: адрес
+	// у него почти всегда `tg:`, а мониторинг и инструкция — обычные
+	// страницы, и ничего, кроме https, за ними быть не должно.
+	const current = "https://panel.example.com/sub/token"
+
+	var info Info
+
+	ApplyHeaders(&info, map[string][]string{
+		"clod-portal-url":  {"https://provider.example/cabinet"},
+		"support-url":      {"https://t.me/provider_support"},
+		"clod-bot-url":     {"tg://resolve?domain=provider_bot"},
+		"clod-monitor-url": {"https://status.provider.example"},
+		"clod-guide-url":   {"https://provider.example/help/setup"},
+	}, current)
+
+	if info.PortalURL != "https://provider.example/cabinet" {
+		t.Fatalf("кабинет = %q", info.PortalURL)
+	}
+
+	if info.SupportURL != "https://t.me/provider_support" {
+		t.Fatalf("поддержка = %q", info.SupportURL)
+	}
+
+	if info.BotURL != "tg://resolve?domain=provider_bot" {
+		t.Fatalf("бот = %q", info.BotURL)
+	}
+
+	if info.MonitorURL != "https://status.provider.example" {
+		t.Fatalf("мониторинг = %q", info.MonitorURL)
+	}
+
+	if info.GuideURL != "https://provider.example/help/setup" {
+		t.Fatalf("инструкция = %q", info.GuideURL)
+	}
+
+	// Бот принимает и обычную ссылку, и почту — как поддержка.
+	for _, raw := range []string{"https://t.me/provider_bot", "mailto:bot@provider.example"} {
+		var one Info
+
+		ApplyHeaders(&one, map[string][]string{"clod-bot-url": {raw}}, current)
+
+		if one.BotURL != raw {
+			t.Fatalf("бот по %q = %q", raw, one.BotURL)
+		}
+	}
+
+	// А мониторингу и инструкции ни `tg:`, ни голый http не годятся.
+	var strict Info
+
+	ApplyHeaders(&strict, map[string][]string{
+		"clod-monitor-url": {"tg://resolve?domain=status"},
+		"clod-guide-url":   {"http://provider.example/help"},
+		"clod-bot-url":     {"javascript:alert(1)"},
+	}, current)
+
+	if strict.MonitorURL != "" || strict.GuideURL != "" || strict.BotURL != "" {
+		t.Fatalf(
+			"негодные ссылки прошли: бот %q, мониторинг %q, инструкция %q",
+			strict.BotURL, strict.MonitorURL, strict.GuideURL,
+		)
+	}
+
+	// Кириллицу и длинные адреса панели шлют через base64, и ссылки тут
+	// ничем не отличаются от остальных заголовков.
+	var encoded Info
+
+	ApplyHeaders(&encoded, map[string][]string{
+		"x-amz-meta-clod-monitor-url": {
+			"base64:" + base64.StdEncoding.EncodeToString([]byte("https://status.provider.example/страница")),
+		},
+	}, current)
+
+	if !strings.HasPrefix(encoded.MonitorURL, "https://status.provider.example/") {
+		t.Fatalf("мониторинг из base64 = %q", encoded.MonitorURL)
+	}
+}
+
+func TestApplyHeadersLinksVanishWhenPanelStops(t *testing.T) {
+	// Ссылки провайдера — состояние последнего ответа. Панель перестала слать
+	// заголовок — строки в настройках не должно быть тем же обновлением.
+	// Сохранённая ссылка пережила бы и смену тарифа, и подмену ссылки
+	// подписки на другого провайдера — и увела бы человека в чужой кабинет.
+	info := Info{
+		Title:      "Провайдер",
+		PortalURL:  "https://old.example/cabinet",
+		SupportURL: "https://t.me/old_support",
+		HomeURL:    "https://old.example/sub",
+		BotURL:     "tg://resolve?domain=old_bot",
+		MonitorURL: "https://status.old.example",
+		GuideURL:   "https://old.example/help",
+	}
+
+	// Ответ следующего провайдера: у него есть только кабинет и бот.
+	ApplyHeaders(&info, map[string][]string{
+		"clod-portal-url": {"https://new.example/cabinet"},
+		"clod-bot-url":    {"tg://resolve?domain=new_bot"},
+	}, "https://panel.example.com/sub/token")
+
+	if info.PortalURL != "https://new.example/cabinet" {
+		t.Fatalf("кабинет = %q", info.PortalURL)
+	}
+
+	if info.BotURL != "tg://resolve?domain=new_bot" {
+		t.Fatalf("бот = %q", info.BotURL)
+	}
+
+	if info.SupportURL != "" || info.HomeURL != "" || info.MonitorURL != "" || info.GuideURL != "" {
+		t.Fatalf(
+			"чужие ссылки остались: поддержка %q, страница %q, мониторинг %q, инструкция %q",
+			info.SupportURL, info.HomeURL, info.MonitorURL, info.GuideURL,
+		)
+	}
+
+	// Ответ вовсе без ссылок не оставляет ни одной.
+	ApplyHeaders(&info, map[string][]string{"profile-title": {"Провайдер"}}, "https://panel.example.com/sub/token")
+
+	if info.PortalURL != "" || info.BotURL != "" {
+		t.Fatalf("ссылки должны исчезать целиком: кабинет %q, бот %q", info.PortalURL, info.BotURL)
+	}
+
+	// А название держится: имя подписки между обновлениями пропадать не должно.
+	if info.Title != "Провайдер" {
+		t.Fatalf("название = %q", info.Title)
+	}
+}
+
+func TestApplyHeadersBadLinkDropsOldOne(t *testing.T) {
+	// Негодная ссылка (http, javascript:) — это НЕ «оставь прошлую»: панель
+	// заголовок прислала, просто он никуда не годится, и открывать по нему
+	// нечего. Иначе кривая настройка панели навсегда прибивала бы старый адрес.
+	info := Info{MonitorURL: "https://status.old.example"}
+
+	ApplyHeaders(&info, map[string][]string{
+		"clod-monitor-url": {"http://status.new.example"},
+	}, "https://panel.example.com/sub")
+
+	if info.MonitorURL != "" {
+		t.Fatalf("мониторинг = %q, ожидалась пустая строка", info.MonitorURL)
 	}
 }

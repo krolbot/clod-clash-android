@@ -16,14 +16,32 @@ Android-клиент [Clod Clash](https://github.com/Mrvibecodic/clod-clash) —
 |---|---|---|
 | **Оболочка приложения**: `VpnService`, JNI-мост Go↔Kotlin, многопроцессный сервисный слой, хранилище профилей, сборка Go-ядра, CI | [MetaCubeX/ClashMetaForAndroid](https://github.com/MetaCubeX/ClashMetaForAndroid) — база этого репозитория, история сохранена целиком | GPL-3.0 |
 | **Ядро** | [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo), подключено submodule'ом, **не форкается и не патчится**; закреплено на стабильном теге `v1.19.29` (`e26714a1`) — в `.gitmodules` стоит `branch = Alpha`, но CI тянет submodule только по `--init`, без `--remote`, поэтому пин держится. Двигать пин осознанно и вместе с обоими `go.mod` | GPL-3.0 |
-| **Интерфейс на Jetpack Compose** | [fUS1ONd/Prizrak-Box-android](https://github.com/fUS1ONd/Prizrak-Box-android) — их миграция UI на Compose переносится к нам как основа (планируется) | GPL-3.0 |
-| **Визуальный референс главного экрана** | [coolcoala/KoalaClash-Android](https://github.com/coolcoala/KoalaClash-Android) — идея раскрывающегося экрана вместо переключателя режимов | GPL-3.0 |
+| **Интерфейс** | наш: все экраны написаны здесь на Jetpack Compose поверх оболочки апстрима; от CMFA не осталось ни одной разметки | GPL-3.0 |
 | **Логика подписок и заголовков Remnawave** | наша, написана здесь: заголовки разбирает Go (`core/…/config/panel/`), решения по подписке — Kotlin (`service/…/SubscriptionAlerts.kt`). Правила те же, что в десктопном [Mrvibecodic/clod-clash](https://github.com/Mrvibecodic/clod-clash), но код отдельный — общего крейта через FFI у Android нет | GPL-3.0 |
 
 Отдельная благодарность авторам [ClashForAndroid](https://github.com/Kr328/ClashForAndroid)
 (Kr328) — с него начинался апстрим, и его код до сих пор составляет заметную часть оболочки.
 
 Список лицензий сторонних компонентов — в [NOTICE](NOTICE).
+
+## Благодарности
+
+Проектам, у которых мы подсмотрели продуктовые решения. Чужого кода в них мы не брали —
+только форматы, приёмы и подходы:
+
+* [Prizrak-Box](https://github.com/legiz-ru/Prizrak-Box) от legiz-ru — синтаксис цветовой
+  разметки `#RRGGBB` в объявлениях и синоним `global-mode: false`, которым замок режима
+  ставят панели, настроенные под них;
+* [koala-clash](https://github.com/coolcoala/koala-clash) и
+  [KoalaClash-Android](https://github.com/coolcoala/KoalaClash-Android) от coolcoala — формат
+  User-Agent «имя/версия» и набор заголовков опознания устройства: панель считает клиента с
+  другим UA новым устройством;
+* [FlClash](https://github.com/chen08209/FlClash) от chen08209 и его форк
+  [FlClashX](https://github.com/pluralplay/FlClashX) от pluralplay — приём с подменой хоста
+  подписки (`new-domain`, `fallback-domain`) и состав заголовков, по которому мы сверялись.
+
+Те же благодарности — в [README десктопной версии](https://github.com/Mrvibecodic/clod-clash#благодарности):
+клиенты общие, и подсмотренное работает на обеих платформах.
 
 ## Заголовки подписки
 
@@ -41,13 +59,17 @@ ClodClash/<версия> (Android)`, `Accept: */*` и, пока включено
 `profile-logo`, `subscription-userinfo`, `subscription-refill-date`,
 `profile-update-interval`, `announce` + `announce-url`, `clod-promo` +
 `clod-promo-url`, `clod-portal-url`, `profile-web-page-url`, `support-url`,
+`clod-bot-url`, `clod-monitor-url`, `clod-guide-url`,
 `clod-hwid-limit`, всё семейство `x-hwid-*`, пороги напоминаний
 `notify-expire-days` / `notify-traffic-percent` (плюс голый
 `notification-subs-expire` и `global-mode` для совместимости), переезд подписки
 `new-url` / `new-domain`, запасные адреса `fallback-url` / `fallback-domain`,
 часы панели по стандартному `Date`, `clod-lock-mode` и `clod-show-0hosts`.
 
-**Расхождений с десктопом по заголовкам не осталось.**
+**Чего пока нет против десктопа:** `clod-connect-mode` (чем ловить трафик),
+`clod-device-remove` (кнопка «Освободить устройство» в диалоге лимита) и
+`clod-latency-style` с синонимом `pxa-latency-dots` (вид задержки). Панель
+может слать их — они просто игнорируются.
 
 **`clod-simple-mode` на Android не поддерживается намеренно.** На десктопе он
 прячет продвинутые настройки, потому что там есть чего прятать: два режима
@@ -60,10 +82,23 @@ ClodClash/<версия> (Android)`, `Accept: */*` и, пока включено
 
 * объявление и промо делят один слот — `clod-promo` показывается, только если
   `announce` пуст, — и обрезаются до 300 символов, а не до 500;
+* всё, что панель рассказывает о себе (ссылки, объявление, промо, логотип,
+  текст для диалогов устройства), живёт ровно ОДИН ответ: убрала заголовок —
+  значение пропало тем же обновлением, как и на десктопе. Держится только
+  название подписки: под ним она лежит в списке;
 * `profile-update-interval` применяется только к новой подписке с пустым
   интервалом; у уже добавленной интервал остаётся тот, что стоит в свойствах;
 * `subscription-refill-date` дополнительно понимает миллисекунды и `RFC3339`;
 * `profile-web-page-url` разбирается, но пока нигде не показывается;
+* ссылки провайдера (`clod-portal-url`, `support-url`, `clod-bot-url`,
+  `clod-monitor-url`, `clod-guide-url`) живут ОДНИМ блоком в настройках, а не
+  строкой на главной, как на десктопе: главный экран телефона — это кнопка
+  подключения и состояние подписки, и ряд чужих ссылок под ней спорил бы с
+  ними за внимание. Порядок и названия те же, что на ПК; блок назван именем
+  текущей подписки, а если ни одной ссылки не пришло — блока нет вовсе.
+  Ссылки живут ровно один ответ панели: перестала слать заголовок — строка
+  исчезает тем же обновлением, и на профиле с новой ссылкой не остаётся
+  кабинет прежнего провайдера;
 * описание узла (`serverDescription` внутри узла конфигурации) показывается
   подписью в списке серверов вместо типа протокола. Панель Remnawave отдаёт
   это поле только «расширенным клиентам» — ей нужен
@@ -77,7 +112,7 @@ ClodClash/<версия> (Android)`, `Accept: */*` и, пока включено
 (`x-amz-meta-announce` подойдёт), `base64:<payload>` декодируется четырьмя
 алфавитами, а значение, объявившее себя base64 и им не оказавшееся, считается
 отсутствующим. Все ссылки принимаются **только по `https`**; `support-url`
-дополнительно понимает `tg:` и `mailto:`.
+и `clod-bot-url` дополнительно понимают `tg:` и `mailto:`.
 
 ## Лицензия
 

@@ -16,7 +16,7 @@ golang {
         // clod: единственный flavor — standard (апстримные alpha/meta схлопнуты в один)
         create("standard") {
             tags.set(listOf("foss","with_gvisor","cmfa"))
-            srcDir.set(file("src/foss/golang"))
+            srcDir.set(file("src/main/golang"))
         }
         all {
             fileName.set("libclash.so")

@@ -107,7 +107,11 @@ jobs:
 
       - name: Verify release signing fails closed
         run: |
-          if ./gradlew --no-daemon -m app:assembleStandardRelease >/dev/null 2>&1; then
+          set -euo pipefail
+          tasks=$(mktemp)
+          trap 'rm -f "$tasks"' EXIT
+          ./gradlew --no-daemon -q app:tasks --all > "$tasks"
+          if grep -Fq 'assembleStandardRelease' "$tasks"; then
             echo "::error::Unsigned application release variant is available"
             exit 1
           fi

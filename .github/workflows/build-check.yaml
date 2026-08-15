@@ -105,6 +105,13 @@ jobs:
           core:testStandardDebugUnitTest
           design:testStandardDebugUnitTest
 
+      - name: Verify release signing fails closed
+        run: |
+          if ./gradlew --no-daemon -m app:assembleStandardRelease >/dev/null 2>&1; then
+            echo "::error::Unsigned application release variant is available"
+            exit 1
+          fi
+
       - name: Upload Test Report
         uses: actions/upload-artifact@v7
         if: ${{ !cancelled() && steps.unit-tests.outcome == 'failure' }}

@@ -193,6 +193,14 @@ subprojects {
         if (isApp) {
             this as AppExtension
 
+            // A release variant without protected signing input would produce an
+            // unsigned artifact. Do not create that variant at all.
+            variantFilter {
+                if (buildType.name == "release" && !rootProject.file("signing.properties").isFile) {
+                    ignore = true
+                }
+            }
+
             splits {
                 abi {
                     isEnable = true

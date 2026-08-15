@@ -1,7 +1,8 @@
+import groovy.json.JsonOutput
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import groovy.json.JsonOutput
+import java.security.MessageDigest
 
 plugins {
     kotlin("android")
@@ -61,24 +62,71 @@ tasks.getByName("clean", type = Delete::class) {
 
 val geoFilesDownloadDir = "src/main/assets"
 
+data class GeoAsset(
+    val url: String,
+    val outputFileName: String,
+    val sha256: String,
+)
+
+val geoAssets = listOf(
+    GeoAsset(
+        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb",
+        "geoip.metadb",
+        "af2e40f90aa30e67a26d2f5546c7cd927181a714017a14900a2a0ceaf634a1a4",
+    ),
+    GeoAsset(
+        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat",
+        "geosite.dat",
+        "31caedc9b4a38d471c7b83bf358b318548b4ad1912ef9885fa1ccfc60118311c",
+    ),
+    GeoAsset(
+        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb",
+        "ASN.mmdb",
+        "08abe94859725a638ab668d0ccc1fa10516b0d9623bb0098daf64ec227d33627",
+    ),
+    GeoAsset(
+        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/BundleMRS.7z",
+        "BundleMRS.7z",
+        "f586164982c67a7c8361ced7ef24802bdde1ae05d720df305917f5086807164d",
+    ),
+)
+
 task("downloadGeoFiles") {
-
-    val geoFilesUrls = mapOf(
-        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb" to "geoip.metadb",
-        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat" to "geosite.dat",
-        // "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb" to "country.mmdb",
-        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb" to "ASN.mmdb",
-        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/BundleMRS.7z" to "BundleMRS.7z",
-    )
-
     doLast {
-        geoFilesUrls.forEach { (downloadUrl, outputFileName) ->
-            val url = URL(downloadUrl)
-            val outputPath = file("$geoFilesDownloadDir/$outputFileName")
+        geoAssets.forEach { asset ->
+            val outputPath = file("$geoFilesDownloadDir/${asset.outputFileName}")
             outputPath.parentFile.mkdirs()
-            url.openStream().use { input ->
-                Files.copy(input, outputPath.toPath(), StandardCopyOption.REPLACE_EXISTING)
-                println("$outputFileName downloaded to $outputPath")
+            val temporaryPath = Files.createTempFile(
+                outputPath.parentFile.toPath(),
+                asset.outputFileName,
+                ".download",
+            )
+            try {
+                URL(asset.url).openStream().use { input ->
+                    Files.copy(input, temporaryPath, StandardCopyOption.REPLACE_EXISTING)
+                }
+                val digest = MessageDigest.getInstance("SHA-256")
+                val actual = temporaryPath.toFile().inputStream().use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        digest.update(buffer, 0, read)
+                    }
+                    digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                }
+                check(actual == asset.sha256) {
+                    "Checksum mismatch for ${asset.outputFileName}"
+                }
+                Files.move(
+                    temporaryPath,
+                    outputPath.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+                println("${asset.outputFileName} verified and stored in $outputPath")
+            } finally {
+                Files.deleteIfExists(temporaryPath)
             }
         }
     }

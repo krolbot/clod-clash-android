@@ -2,6 +2,7 @@
 
 import com.android.build.gradle.AppExtension
 import com.android.build.gradle.BaseExtension
+import groovy.json.JsonOutput
 import java.net.URL
 import java.util.*
 
@@ -107,6 +108,11 @@ subprojects {
                 dimension = flavorDimensionList[0]
 
                 buildConfigField("boolean", "PREMIUM", "Boolean.parseBoolean(\"false\")")
+                buildConfigField(
+                    "String",
+                    "DIAGNOSTICS_ENDPOINT",
+                    JsonOutput.toJson(System.getenv("DIAGNOSTICS_ENDPOINT").orEmpty()),
+                )
 
                 resValue("string", "launch_name", "Clod Clash")
                 resValue("string", "application_name", "Clod Clash")

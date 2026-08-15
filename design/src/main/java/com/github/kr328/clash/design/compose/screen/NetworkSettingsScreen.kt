@@ -22,6 +22,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.github.kr328.clash.design.R
+import com.github.kr328.clash.design.compose.component.ActionRow
 import com.github.kr328.clash.design.compose.component.ActivityScaffold
 import com.github.kr328.clash.design.compose.component.SectionHeader
 import com.github.kr328.clash.design.compose.component.SelectRow
@@ -54,6 +55,7 @@ sealed interface NetworkSettingsAction {
     data class SetTunStack(val index: Int) : NetworkSettingsAction
     data class SetResetConnections(val enabled: Boolean) : NetworkSettingsAction
     data class SetKeepAwake(val enabled: Boolean) : NetworkSettingsAction
+    data object OpenDiagnostics : NetworkSettingsAction
 }
 
 @Composable
@@ -162,6 +164,14 @@ fun NetworkSettingsScreen(
                 checked = state.keepAwake,
                 enabled = state.editable,
                 onCheckedChange = { onAction(NetworkSettingsAction.SetKeepAwake(it)) },
+            )
+
+            SectionHeader(stringResource(R.string.diagnostics_credential_title))
+            ActionRow(
+                title = stringResource(R.string.diagnostics_tunnel_title),
+                subtitle = stringResource(R.string.diagnostics_tunnel_ready),
+                icon = painterResource(R.drawable.ic_baseline_adb),
+                onClick = { onAction(NetworkSettingsAction.OpenDiagnostics) },
             )
 
             Spacer(Modifier.height(24.dp))

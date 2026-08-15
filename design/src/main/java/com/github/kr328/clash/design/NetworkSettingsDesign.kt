@@ -21,6 +21,7 @@ class NetworkSettingsDesign(
 ) : Design<NetworkSettingsDesign.Request>(context) {
     sealed interface Request {
         data object Back : Request
+        data object OpenDiagnostics : Request
     }
 
     private val tunStacks = listOf("auto", "system", "gvisor", "mixed")
@@ -49,6 +50,7 @@ class NetworkSettingsDesign(
     private fun onAction(action: NetworkSettingsAction) {
         when (action) {
             NetworkSettingsAction.Back -> requests.trySend(Request.Back)
+            NetworkSettingsAction.OpenDiagnostics -> requests.trySend(Request.OpenDiagnostics)
             is NetworkSettingsAction.SetEnableVpn -> {
                 uiStore.enableVpn = action.enabled
 

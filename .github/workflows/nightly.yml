@@ -92,6 +92,8 @@ jobs:
           } > signing.properties
 
       - name: Сборка
+        env:
+          DIAGNOSTICS_ENDPOINT: ${{ vars.DIAGNOSTICS_ENDPOINT }}
         run: ./gradlew --no-daemon app:assembleStandardRelease
 
       - name: Проверка выравнивания 16 KB

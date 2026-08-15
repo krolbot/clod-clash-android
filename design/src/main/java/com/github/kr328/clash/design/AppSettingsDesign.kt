@@ -16,7 +16,9 @@ import com.github.kr328.clash.design.model.Behavior
 import com.github.kr328.clash.design.model.DarkMode
 import com.github.kr328.clash.design.store.UiStore
 import com.github.kr328.clash.design.ui.ToastDuration
+import com.github.kr328.clash.service.store.DiagnosticsCredentialStore
 import com.github.kr328.clash.service.store.ServiceStore
+import com.github.kr328.clash.service.util.sendDiagnosticsChanged
 import kotlinx.coroutines.launch
 
 class AppSettingsDesign(
@@ -39,6 +41,7 @@ class AppSettingsDesign(
     }
 
     private val darkModes = DarkMode.entries
+    private val credentials = DiagnosticsCredentialStore(context)
 
     private val languageTags = listOf("", "en", "ru")
 
@@ -87,6 +90,8 @@ class AppSettingsDesign(
 
         uiStore.reset()
         srvStore.reset()
+        credentials.clear()
+        context.sendDiagnosticsChanged(false)
         onReset()
 
         applyLanguage(0)

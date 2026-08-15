@@ -85,7 +85,18 @@ jobs:
         id: go-tests
         if: success()
         working-directory: core/src/main/golang
-        run: go test ./native/config/panel/...
+        run: |
+          go test ./native/diagnostics.go ./native/diagnostics_test.go
+          go test \
+            ./native/config/controller_access.go \
+            ./native/config/process.go \
+            ./native/config/process_test.go \
+            ./native/config/override.go \
+            ./native/config/defaults.go \
+            ./native/config/provider.go \
+            ./native/config/sentinel.go \
+            ./native/config/panel.go
+          go test ./native/config/panel/...
 
       # Unit-тесты на чистые считалки — ДО сборки приложения: они дешевле
       # (:core им нужен, а вот сборка APK, R8 и упаковка — нет), и красная
@@ -122,6 +133,8 @@ jobs:
 
       - name: Build
         if: success()
+        env:
+          DIAGNOSTICS_ENDPOINT: ${{ vars.DIAGNOSTICS_ENDPOINT }}
         run: ./gradlew --no-daemon app:assembleStandardDebug -Pclod.abi=arm64-v8a
 
       # Один артефакт вместо четырёх: сборка идёт по одной ABI (-Pclod.abi=arm64-v8a),

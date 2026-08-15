@@ -1,20 +1,18 @@
 package com.github.kr328.clash
 
-import com.github.kr328.clash.design.NetworkSettingsDesign
-import com.github.kr328.clash.common.util.intent
+import com.github.kr328.clash.design.DiagnosticsSettingsDesign
+import com.github.kr328.clash.remote.Remote
 import com.github.kr328.clash.service.store.ServiceStore
-import com.github.kr328.clash.service.util.activeLocalProxyPort
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.selects.select
 
-class NetworkSettingsActivity : BaseActivity<NetworkSettingsDesign>() {
+class DiagnosticsSettingsActivity : BaseActivity<DiagnosticsSettingsDesign>() {
     override suspend fun main() {
-        val design = NetworkSettingsDesign(
+        val design = DiagnosticsSettingsDesign(
             this,
-            uiStore,
             ServiceStore(this),
-            clashRunning,
-            activeLocalProxyPort() ?: 0,
+            clashRunning && uiStore.enableVpn,
+            Remote.broadcasts.diagnosticsState,
         )
 
         setContentDesign(design)
@@ -25,18 +23,17 @@ class NetworkSettingsActivity : BaseActivity<NetworkSettingsDesign>() {
                     when (it) {
                         Event.ClashStart, Event.ClashStop, Event.ServiceRecreated ->
                             recreate()
+                        Event.DiagnosticsStatusChanged ->
+                            design.updateDiagnosticsStatus(Remote.broadcasts.diagnosticsState)
                         else -> Unit
                     }
                 }
                 design.requests.onReceive {
                     when (it) {
-                        NetworkSettingsDesign.Request.Back -> finish()
-                        NetworkSettingsDesign.Request.OpenDiagnostics ->
-                            startActivity(DiagnosticsSettingsActivity::class.intent)
+                        DiagnosticsSettingsDesign.Request.Back -> finish()
                     }
                 }
             }
         }
     }
-
 }

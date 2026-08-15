@@ -12,6 +12,7 @@ import com.github.kr328.clash.common.compat.isAllowForceDarkCompat
 import com.github.kr328.clash.common.compat.isLightNavigationBarCompat
 import com.github.kr328.clash.common.compat.isLightStatusBarsCompat
 import com.github.kr328.clash.common.compat.isSystemBarsTranslucentCompat
+import com.github.kr328.clash.common.model.DiagnosticsState
 import com.github.kr328.clash.common.util.AppLocale
 import com.github.kr328.clash.common.util.Redact
 import com.github.kr328.clash.design.Design
@@ -241,6 +242,10 @@ abstract class BaseActivity<D : Design<*>> : AppCompatActivity(),
         }
     }
 
+    override fun onDiagnosticsStatusChanged(status: DiagnosticsState) {
+        events.trySend(Event.DiagnosticsStatusChanged)
+    }
+
     override fun onStarting(stage: String?) {
         startupStage = stage
 
@@ -309,6 +314,7 @@ abstract class BaseActivity<D : Design<*>> : AppCompatActivity(),
         ProfileUpdateStarted,
         ProfileUpdateCompleted,
         ProfileUpdateFailed,
+        DiagnosticsStatusChanged,
     }
 
     private fun syncAppLocale() {

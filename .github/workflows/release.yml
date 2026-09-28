@@ -310,9 +310,13 @@ jobs:
 
       - name: Проверить подпись
         env:
-          CERT_SHA256: aa3ac63121c7f6dcbc62bbbe0c372b1ceaef9ba86bf6d96eae99c6c840d3c62c
+          CERT_SHA256: ${{ secrets.CERT_SHA256 }}
         run: |
           set -euo pipefail
+          [[ "$CERT_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || {
+            echo "::error::Секрет CERT_SHA256 не задан или имеет неверный формат"
+            exit 1
+          }
           BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
           for apk in signed/*.apk; do
             out=$("$BT/apksigner" verify -v --print-certs "$apk")

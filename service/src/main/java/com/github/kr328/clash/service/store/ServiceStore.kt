@@ -204,6 +204,11 @@ class ServiceStore(context: Context) {
         defaultValue = false
     )
 
+    var diagnosticsEndpoint by store.string(
+        key = "diagnostics_endpoint",
+        defaultValue = DEFAULT_DIAGNOSTICS_ENDPOINT,
+    )
+
     fun reset() {
         enableHwid = true
         resetConnectionsOnNetworkChange = true
@@ -222,6 +227,7 @@ class ServiceStore(context: Context) {
         dynamicNotification = false
         keepAwake = false
         appLocale = ""
+        diagnosticsEndpoint = DEFAULT_DIAGNOSTICS_ENDPOINT
     }
 
     fun markSessionStarted(): Long {

@@ -68,6 +68,7 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
         val watch = install(TunWatchModule(self))
         install(TimeZoneModule(self))
         install(SuspendModule(self))
+        install(DiagnosticsModule(self))
 
         val reopens = restartBudget()
 

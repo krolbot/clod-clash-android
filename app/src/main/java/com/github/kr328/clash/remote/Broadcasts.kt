@@ -11,6 +11,7 @@ import com.github.kr328.clash.common.compat.registerReceiverCompat
 import com.github.kr328.clash.common.constants.Intents
 import com.github.kr328.clash.common.constants.Permissions
 import com.github.kr328.clash.common.log.Log
+import com.github.kr328.clash.common.model.DiagnosticsState
 import com.github.kr328.clash.util.stopClashService
 import java.util.*
 
@@ -29,6 +30,7 @@ class Broadcasts(private val context: Application) {
         fun onFreezeMarksChanged(uuid: UUID?) {}
         fun onHiddenServersChanged() {}
         fun onTunnelAppsChanged() {}
+        fun onDiagnosticsStatusChanged(status: DiagnosticsState)
     }
 
     @Volatile
@@ -82,6 +84,10 @@ class Broadcasts(private val context: Application) {
     private fun releaseHeldStop() {
         if (clashActive && takeHeldStop()) context.stopClashService()
     }
+
+    @Volatile
+    var diagnosticsState: DiagnosticsState = DiagnosticsState.STOPPED
+        private set
 
     private var registered = false
     private val receivers = mutableListOf<Observer>()
@@ -176,6 +182,12 @@ class Broadcasts(private val context: Application) {
                         it.onTunnelAppsChanged()
                     }
                 }
+                Intents.ACTION_DIAGNOSTICS_STATUS -> {
+                    diagnosticsState = intent.getStringExtra(Intents.EXTRA_DIAGNOSTICS_STATUS)
+                        ?.let { runCatching { DiagnosticsState.valueOf(it) }.getOrNull() }
+                        ?: DiagnosticsState.STOPPED
+                    receivers.forEach { it.onDiagnosticsStatusChanged(diagnosticsState) }
+                }
             }
         }
     }
@@ -211,6 +223,7 @@ class Broadcasts(private val context: Application) {
                     addAction(Intents.ACTION_FREEZE_MARKS_CHANGED)
                     addAction(Intents.ACTION_HIDDEN_SERVERS_CHANGED)
                     addAction(Intents.ACTION_TUNNEL_APPS_CHANGED)
+                    addAction(Intents.ACTION_DIAGNOSTICS_STATUS)
                 }, Permissions.RECEIVE_SELF_BROADCASTS)
 
                 registered = true

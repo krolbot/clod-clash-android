@@ -18,6 +18,7 @@ import com.github.kr328.clash.common.compat.isLightNavigationBarCompat
 import com.github.kr328.clash.common.compat.isLightStatusBarsCompat
 import com.github.kr328.clash.common.compat.isSystemBarsTranslucentCompat
 import com.github.kr328.clash.common.log.Log
+import com.github.kr328.clash.common.model.DiagnosticsState
 import com.github.kr328.clash.common.util.AppLocale
 import com.github.kr328.clash.common.util.Redact
 import com.github.kr328.clash.design.Design
@@ -318,6 +319,10 @@ abstract class BaseActivity<D : Design<*>> : AppCompatActivity(),
         }
     }
 
+    override fun onDiagnosticsStatusChanged(status: DiagnosticsState) {
+        events.trySend(Event.DiagnosticsStatusChanged)
+    }
+
     override fun onStarting(stage: String?) {
         startupStage = stage
 
@@ -386,6 +391,7 @@ abstract class BaseActivity<D : Design<*>> : AppCompatActivity(),
         data class FreezeMarksChanged(val uuid: UUID?) : Event
         data object HiddenServersChanged : Event
         data object TunnelAppsChanged : Event
+        data object DiagnosticsStatusChanged : Event
     }
 
     private fun syncAppLocale() {

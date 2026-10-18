@@ -4,6 +4,13 @@
 # именно ядро с патчами: нет маркера — правки в ядре нет.
 set -euo pipefail
 cd "$GITHUB_WORKSPACE/core/src/foss/golang/clash"
+for p in "$GITHUB_WORKSPACE"/.github/patch-core/*.patch; do
+    patch --verbose -p 1 -F 0 < "$p"
+done
+
+# diagnostics: секрет Controller меняется без перезапуска ядра.
+grep -q 'func SetSecret(value string)' hub/route/server.go
+grep -q 'secret := currentSecret()' hub/route/server.go
 grep -q ProbeHolding adapter/adapter.go
 grep -qF 'ctx.Err() == context.Canceled' adapter/adapter.go
 grep -q ProbeHolding adapter/outboundgroup/groupbase.go
@@ -23,6 +30,8 @@ grep -qF 'req.URL.Scheme != "https"' component/http/http.go
 grep -qF 'return ErrRedirectDowngrade' component/http/http.go
 grep -A1 -F 'loadProvider(cfg.RuleProviders)' hub/executor/executor.go | grep -qF 'tunnel.OnRunning()'
 grep -A1 -F 'tunnel.OnRunning()' hub/executor/executor.go | grep -qF 'runtime.GC()'
-# Проверка 16–20: обрыв по пути — «неясно», отпечаток без имени сервера и Host
-grep -A3 -F 'case ctx.Err() == nil:' adapter/download.go | grep -qF 'return DownloadUnknown'
-grep -q disguiseKeys adapter/fingerprint.go
+# Проверка 16–20: обрыв по пути — «неясно», отпечаток без имени и заглушек панели
+grep -qF 'result.Verdict = DownloadUnknown' adapter/download.go
+grep -A3 -F 'case ctx.Err() == nil:' adapter/download.go | grep -qF 'result.Verdict = DownloadDead'
+grep -qF 'if !leadsToAServer(mapping)' adapter/fingerprint.go
+grep -qF 'if key != "name"' adapter/fingerprint.go

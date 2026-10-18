@@ -1,7 +1,13 @@
 package com.github.kr328.clash
 
+import android.app.Activity
+import androidx.activity.result.contract.ActivityResultContracts
+import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.design.NetworkSettingsDesign
 import com.github.kr328.clash.design.NetworkSettingsPrefs
+import com.github.kr328.clash.design.R
+import com.github.kr328.clash.design.ui.ToastDuration
+import com.github.kr328.clash.remote.Remote
 import com.github.kr328.clash.remote.StatusClient
 import com.github.kr328.clash.service.store.ServiceSettings
 import com.github.kr328.clash.service.util.activeLocalProxyPort
@@ -41,6 +47,7 @@ class NetworkSettingsActivity : BaseActivity<NetworkSettingsDesign>() {
             activeLocalProxyPort() ?: 0,
             profileTunStack,
             strictPrivateDnsHost(),
+            Remote.broadcasts.diagnosticsState,
         )
 
         setContentDesign(design)
@@ -59,14 +66,33 @@ class NetworkSettingsActivity : BaseActivity<NetworkSettingsDesign>() {
                     when (it) {
                         // Экран показывает подписку, которую загружает сессия, и
                         // от неё зависит только замком — тот переключается на месте.
-                        Event.ClashStarting, Event.ClashStart, Event.ClashStop, Event.ActivityStart -> syncLock()
+                        Event.ClashStarting, Event.ClashStart, Event.ClashStop -> syncLock()
+                        Event.ActivityStart -> {
+                            syncLock()
+                            design.refreshDiagnosticsAccess()
+                        }
                         Event.ServiceRecreated -> recreate()
+                        Event.DiagnosticsStatusChanged ->
+                            design.updateDiagnosticsStatus(Remote.broadcasts.diagnosticsState)
                         else -> Unit
                     }
                 }
                 design.requests.onReceive {
                     when (it) {
                         NetworkSettingsDesign.Request.Back -> finish()
+                        NetworkSettingsDesign.Request.OpenDiagnostics -> {
+                            val result = startActivityForResult(
+                                ActivityResultContracts.StartActivityForResult(),
+                                DiagnosticsSettingsActivity::class.intent,
+                            )
+                            if (result.resultCode == Activity.RESULT_OK) {
+                                design.refreshDiagnosticsAccess()
+                                design.showToast(
+                                    R.string.diagnostics_credential_saved,
+                                    ToastDuration.Short,
+                                )
+                            }
+                        }
                     }
                 }
             }
